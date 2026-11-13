@@ -383,3 +383,63 @@ The face-area test controls detector output; it does not benchmark real face
 detection accuracy. The user's morphed-face image has not been tested against a
 live retrieved original. Latest browser inspection remains unavailable; UI
 JavaScript syntax and element references are checked separately.
+
+
+## Compact results and source order
+
+The hero tagline is smaller and centered. The step badge and visible palette
+swatches were removed (palette statistics remain in machine-readable analysis,
+but have no role in authenticity scoring). Results are separated into keyboard-
+accessible Summary, Sources, Similar images, and Details tabs. Diagnostic data,
+repeated region labels, source links and unavailable comparisons are collapsed;
+changed-reference previews remain expanded. Local analysis opens Details.
+Print displays all tab panels, including those hidden on screen.
+
+The Sources tab sorts by oldest reported publication date after evidence
+collection (at most five fetched pages). Unknown, future, invalid or conflicting
+dates do not receive chronological priority. Modified dates are not publication
+dates. Other discovered pages remain visible with unknown dates. The oldest
+located page is not necessarily the original image upload, image capture date,
+or a truthful source. A separate sort uses existing evidence-support scores.
+
+Official-publisher ranking uses an exact-domain operator-maintained mapping:
+add "official_sources": [{"domain": "your-verified-company-domain.example",
+"label": "Verified company name"}] to config.local.json only after checking
+that publisher identity. This example domain is a placeholder, not a verified
+source. With no configured mapping, publisher identity is unverified; a famous
+name, HTTPS or a matching logo does not certify a site. An official domain can
+still contain edited or inaccurate material, and its connection to the uploaded
+image is a separate question. No automated organization-ownership verification
+or general publisher credibility model is claimed. Ranking metadata is included
+in exported reports under report.source_ranking.
+
+Validation includes source chronology, conflicting metadata, invalid/future
+dates, exact-domain impersonation rejection, independent support-score labels,
+static UI structure, JS syntax and dynamic tab/renderer smoke checks using a DOM
+stub. Browser visual verification was not performed because prior Chrome access
+was denied. Restart the backend for the ranking update, then refresh the page.
+
+
+## Interactive architecture map
+
+Open /architecture (or the Architecture link in the header) for a standalone
+node graph of the current implementation: 17 components and 24 conceptual data
+connections. Select nodes for input/output contracts, code references and
+limitations. Drag nodes, pan empty canvas space, use zoom/Fit/Reset controls,
+highlight Search/Compare/Local pipelines, or start the guided walkthrough.
+Animations are illustrative, not live telemetry; the page performs no searches
+or provider calls. Reduced-motion preferences and a pause control are supported.
+The map does not imply a database, full 5Pils models, signed creation provenance,
+identity recognition or automatic SynthID integration. It uses native HTML,
+CSS, JavaScript and SVG with no framework/build dependencies. Page delivery,
+asset responses, JS syntax and graph connectivity were checked. Browser visual
+inspection remains unperformed because prior Chrome access was denied.
+
+
+## Hosted deployment
+
+Render-ready hostname and origin configuration is implemented. Use `python deploy.py`
+as the hosted start command and `pip install -r requirements.lock.txt` to build.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the complete settings, secret configuration,
+state limitations and remaining cloud-validation steps. Nothing has been deployed
+by this change. Local start.ps1 remains available.

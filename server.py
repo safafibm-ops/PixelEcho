@@ -33,6 +33,8 @@ from context_report import context_report
 from assessment import assess
 from investigation import observations, crop_photo, keyword_search, rank_pages, retrieve_passages
 from evidence import SafeFetcher
+from hosting import deployment_settings, same_origin
+from source_ranking import rank_sources
 from scene_integrity import scene_differences
 from text_integrity import paragraphs, compare_text, upload_assessment
 from media_checks import analyze_image
@@ -77,8 +79,9 @@ async def lifespan(app):
     yield
 
 
+PUBLIC_ORIGIN, ALLOWED_HOSTS = deployment_settings(os.environ)
 app = FastAPI(title='PixelEcho', lifespan=lifespan)
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
 app.mount('/static', StaticFiles(directory=ROOT / 'static'), name='static')
 
 
@@ -229,6 +232,11 @@ def index():
     return FileResponse(ROOT / 'static' / 'index.html')
 
 
+@app.get('/architecture', include_in_schema=False)
+def architecture():
+    return FileResponse(ROOT / 'static' / 'architecture.html')
+
+
 @app.get('/api/status')
 def status():
     return {'stage': 5, 'configured': bool(read_key()), 'provider': 'Google Vision Web Detection',
@@ -239,7 +247,7 @@ def status():
 @app.post('/api/analyze-image')
 async def inspect_image(request: Request, file: UploadFile = File(...)):
     origin = request.headers.get('origin')
-    if origin and origin != str(request.base_url).rstrip('/'):
+    if origin and not same_origin(origin, str(request.base_url), PUBLIC_ORIGIN):
         raise HTTPException(403, 'Use the local application to analyze an image.')
     content = await file.read(MAX_BYTES + 1)
     await file.close()
@@ -264,7 +272,7 @@ class EvidenceInput(BaseModel):
 @app.post('/api/evidence')
 async def evidence(request: Request, payload: EvidenceInput):
     origin = request.headers.get('origin')
-    if origin and origin != str(request.base_url).rstrip('/'):
+    if origin and not same_origin(origin, str(request.base_url), PUBLIC_ORIGIN):
         raise HTTPException(403, 'Open the application directly on its localhost address to collect evidence.')
     if evidence_lock.locked():
         raise HTTPException(429, 'Evidence collection is already running. Please wait for it to finish.')
@@ -284,6 +292,12 @@ async def evidence(request: Request, payload: EvidenceInput):
         if case is not None:
             report['retrieval'] = retrieve_passages(result, case['search'].get('investigation', {}).get('clues', {}))
             report['investigation'] = case['search'].get('investigation')
+            try:
+                official_sources=json.loads((ROOT / 'config.local.json').read_text(encoding='utf-8-sig')).get('official_sources', [])
+            except (OSError,ValueError,AttributeError):
+                official_sources=[]
+            report['source_ranking'] = rank_sources(case['search']['pages'], result, report['assessment'], official_sources)
+
         result['report'] = report
         if case is not None:
             case['report'] = report
@@ -305,7 +319,7 @@ def export_report(case_id: str):
 @app.post('/api/search')
 async def search(request: Request, file: UploadFile = File(...)):
     origin = request.headers.get('origin')
-    if origin and origin != str(request.base_url).rstrip('/'):
+    if origin and not same_origin(origin, str(request.base_url), PUBLIC_ORIGIN):
         raise HTTPException(403, 'Open the application directly on its localhost address to search.')
     key = read_key()
     if not key:
@@ -377,7 +391,7 @@ async def document_ocr(content, key):
 @app.post('/api/text-integrity')
 async def text_integrity(request: Request, payload: IntegrityInput):
     origin = request.headers.get('origin')
-    if origin and origin != str(request.base_url).rstrip('/'):
+    if origin and not same_origin(origin, str(request.base_url), PUBLIC_ORIGIN):
         raise HTTPException(403, 'Use the local application to compare image text.')
     expire_cases()
     case = cases.get(payload.case_id)
