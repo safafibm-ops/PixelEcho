@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/ShieldMnt/invisible-watermark",
+  "pypi_version": "0.2.0",
+  "file": "imwatermark/maxDct.py",
+  "sha256": "b7f024cd525b793116f6b7ae461ddcb12be0c6004e2ada8a32c7f8fdae398cc3",
+  "scope": "Unmodified frequency method only; neural RivaGAN code is not used."
+}

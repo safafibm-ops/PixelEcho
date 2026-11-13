@@ -1,0 +1,8 @@
+.venv/
+.uv-cache/
+__pycache__/
+*.pyc
+config.local.json
+vendor/5pils/
+tests/.qa/
+
