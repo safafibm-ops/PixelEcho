@@ -37,14 +37,14 @@
       <p id="filename" class="filename"></p>
       <p class="hint">Searching sends image copies to Google Vision for reverse search and OCR. When keyword search is configured, extracted text queries are sent to Serper. This prototype does not save your upload.</p>
       <label class="collect-option"><input id="collect-evidence" type="checkbox" checked><span>Also collect text from up to five matching public pages. The backend will access those websites.</span></label>
-      <button id="search" disabled>Search the web</button><button id="inspect-image" class="secondary" disabled>Analyze image locally</button><div id="image-analysis" aria-live="polite"></div><section class="check-card" aria-labelledby="synthid-title"><h3 id="synthid-title">SynthID image check</h3><p class="check-status">AUTOMATIC CHECK UNAVAILABLE</p><p>Check for supported AI watermarks using Google’s official detector. PixelEcho cannot currently run this detector or read its result.</p><a class="synthid-action" href="https://synthid.com/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Open Google SynthID Detector ↗</a><ol class="hint"><li>Open the detector and sign in if required.</li><li>Upload the same original image there.</li><li>Read Google’s watermark result.</li></ol><p class="hint">Opening this link does not upload your image. PixelEcho does not record a detector result. No watermark found does not prove the image is human-made.</p></section>
+      <label class="collect-option"><input id="compare-image-text" type="checkbox" checked><span>Compare visual changes and text against up to four retrieved references. Includes similar images; adds up to three Google OCR calls.</span></label><button id="search" disabled>Search the web</button><button id="inspect-image" class="secondary" disabled>Analyze image locally</button><div id="image-analysis" aria-live="polite"></div><section class="check-card" aria-labelledby="synthid-title"><h3 id="synthid-title">SynthID image check</h3><p class="check-status">AUTOMATIC CHECK UNAVAILABLE</p><p>Check for supported AI watermarks using Google’s official detector. PixelEcho cannot currently run this detector or read its result.</p><a class="synthid-action" href="https://synthid.com/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Open Google SynthID Detector ↗</a><ol class="hint"><li>Open the detector and sign in if required.</li><li>Upload the same original image there.</li><li>Read Google’s watermark result.</li></ol><p class="hint">Opening this link does not upload your image. PixelEcho does not record a detector result. No watermark found does not prove the image is human-made.</p></section>
       <div class="connection" id="connection"><span class="dot"></span><span id="connection-text">Checking connection setup…</span></div>
       <div class="setup" id="setup" hidden>Add your Google Vision key to <code>config.local.json</code>. See <code>README.md</code> for the connection steps, then use <a href="/">refresh</a>.</div>
       <div class="error" id="error" role="alert"></div>
     </section>
     <section class="panel" aria-labelledby="results-title">
       <div class="results-head"><h2 id="results-title">Follow the evidence</h2><span class="provider">Google Vision</span></div>
-      <div id="results" aria-live="polite"><div class="empty"><svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><circle cx="21" cy="21" r="13" stroke-width="1.5"/><path d="m31 31 11 11M14 21h14M21 14v14" stroke-width="1.5"/></svg><strong>A little curiosity.<br>A clearer picture.</strong><p>Choose an image to discover matching pages, compare visual details, and build a cited source report.</p></div></div>
+      <div id="upload-integrity" aria-live="polite"></div><div id="results" aria-live="polite"><div class="empty"><svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><circle cx="21" cy="21" r="13" stroke-width="1.5"/><path d="m31 31 11 11M14 21h14M21 14v14" stroke-width="1.5"/></svg><strong>A little curiosity.<br>A clearer picture.</strong><p>Choose an image to discover matching pages, compare visual details, and build a cited source report.</p></div></div>
       <p class="notice">Search results are leads. They do not prove the original creator, first uploader, or authenticity of an image.</p>
       <div id="evidence" aria-live="polite"></div><div id="assessment" aria-live="polite"></div><div id="context-report" aria-live="polite"></div>
     </section>
@@ -63,7 +63,7 @@
 <script>
 const $=id=>document.getElementById(id);let selected=null,configured=false,previewURL=null,busy=false,lastVisualChecks=[],inspectionVersion=0;
 function error(message){$('error').textContent=message;$('error').style.display=message?'block':'none';}
-function choose(file){if(busy)return;error('');if(!file)return;if(!['image/jpeg','image/png'].includes(file.type)){error('Please select a JPEG or PNG image.');return;}if(file.size>5*1024*1024){error('Please choose a file smaller than 5 MB.');return;}selected=file;inspectionVersion++;for(const id of ['image-analysis','evidence','assessment','context-report'])$(id).replaceChildren();$('inspect-image').disabled=false;if(previewURL)URL.revokeObjectURL(previewURL);previewURL=URL.createObjectURL(file);$('preview').src=previewURL;$('preview').style.display='block';$('upload-icon').style.display='none';$('choose-label').textContent='Choose a different image';$('filename').textContent=file.name;$('search').disabled=!configured||busy;}
+function choose(file){if(busy)return;error('');if(!file)return;if(!['image/jpeg','image/png'].includes(file.type)){error('Please select a JPEG or PNG image.');return;}if(file.size>5*1024*1024){error('Please choose a file smaller than 5 MB.');return;}selected=file;inspectionVersion++;for(const id of ['image-analysis','evidence','assessment','context-report','upload-integrity'])$(id).replaceChildren();$('inspect-image').disabled=false;if(previewURL)URL.revokeObjectURL(previewURL);previewURL=URL.createObjectURL(file);$('preview').src=previewURL;$('preview').style.display='block';$('upload-icon').style.display='none';$('choose-label').textContent='Choose a different image';$('filename').textContent=file.name;$('search').disabled=!configured||busy;}
 $('file').addEventListener('change',e=>choose(e.target.files[0]));
 for(const type of ['dragover','dragleave','drop'])$('drop').addEventListener(type,e=>{e.preventDefault();$('drop').classList.toggle('drag',type==='dragover');if(type==='drop')choose(e.dataTransfer.files[0]);});
 function node(tag,text,cls){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;}
@@ -102,7 +102,8 @@ function renderEvidence(data){
 $('search').addEventListener('click',async()=>{
   if(!selected||busy)return;
   error('');busy=true;$('search').disabled=true;$('file').disabled=true;
-  $('search').textContent='Searching…';$('evidence').replaceChildren();$('context-report').replaceChildren();$('assessment').replaceChildren();
+  $('search').textContent='Searching…';$('evidence').replaceChildren();$('context-report').replaceChildren();$('assessment').replaceChildren();$('upload-integrity').replaceChildren();
+  const integrityEnabled=$('compare-image-text').checked;
   const collectEnabled=$('collect-evidence').checked;
   const loading=node('div',undefined,'empty');loading.append(node('div',undefined,'spinner'),node('strong','Looking for matching images…'),node('p','Reads image text and searches the full image, with at most one text-band crop and three keyword queries.'));$('results').replaceChildren(loading);
   const form=new FormData();form.append('file',selected);
@@ -111,6 +112,15 @@ $('search').addEventListener('click',async()=>{
     const data=await response.json();
     if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:'The search could not be completed.');
     render(data);lastVisualChecks=data.verification||[];renderVerification(data.verification||[]);if(data.report)renderContext(data.report,data.case_id);if(data.image_analysis)renderImageAnalysis(data.image_analysis);
+    if(integrityEnabled&&data.case_id){
+      $('search').textContent='Comparing reference images…';
+      $('upload-integrity').replaceChildren(node('h2','Checking image differences…'),node('p','Aligning retrieved references and checking faces, scene regions and readable text. This can take longer than search.','hint'));
+      try{
+        const checked=await fetch('/api/text-integrity',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({case_id:data.case_id})});
+        const integrity=await checked.json();if(!checked.ok)throw new Error(typeof integrity.detail==='string'?integrity.detail:'Reference text comparison unavailable.');
+        renderIntegrity(integrity);
+      }catch(e){$('upload-integrity').replaceChildren(node('h2','Upload trust assessment'),node('p',e.message,'hint'),node('p','Insufficient evidence; no authenticity verdict.','hint'));}
+    }
     if(collectEnabled&&data.pages.length){
       $('search').textContent='Collecting evidence…';$('evidence').append(node('p','Collecting text, image captions, and page metadata…','meta'));
       try{
@@ -167,7 +177,7 @@ for(const link of document.querySelectorAll('[data-open-panel]'))link.addEventLi
  if(panel instanceof HTMLDetailsElement){panel.open=true;panel.querySelector('summary').focus();}
 });
 window.addEventListener('beforeprint',()=>{
- for(const details of document.querySelectorAll('#assessment details,#evidence details,#context-report details')){details.dataset.printWasOpen=String(details.open);details.open=true;}
+ for(const details of document.querySelectorAll('#assessment details,#evidence details,#context-report details,#upload-integrity details')){details.dataset.printWasOpen=String(details.open);details.open=true;}
 });
 window.addEventListener('afterprint',()=>{
  for(const details of document.querySelectorAll('[data-print-was-open]')){details.open=details.dataset.printWasOpen==='true';delete details.dataset.printWasOpen;}
@@ -182,6 +192,25 @@ function renderInvestigation(info,root){
  box.append(node('p',`Keyword search: ${info.keyword_search.status}. ${info.keyword_search.reason}`,'hint'),node('p',`Photo crop: ${info.crop.status}. Up to two Vision requests include separately billable OCR/Web Detection features.`,'hint'));
  box.append(node('p','Building identity, graphic publisher and original photographer remain hypotheses until supported by sources.','hint'));
  if(info.related_pages.length){const related=node('details');related.append(node('summary',`Lower-relevance leads (${info.related_pages.length})`));for(const page of info.related_pages){const line=node('p');line.append(anchor(page.url,page.title));related.append(line);}box.append(related);}root.append(box);
+}
+
+
+function renderIntegrity(data){
+ const root=$('upload-integrity'),assessment=data.upload_assessment;root.replaceChildren(node('h2','Image differences & upload trust assessment'));
+ const summary=node('div',undefined,'score-summary');summary.append(node('div',scoreText(assessment.score),'score-number'),node('strong',assessment.verdict),node('p',assessment.reason,'hint'),node('p',assessment.disclaimer,'hint'));
+ const weights=node('details');weights.append(node('summary','How this consistency score works'));
+ for(const factor of assessment.factors)weights.append(node('p',`${factor.name}: ${factor.points}/${factor.maximum}`,'hint'));
+ if(assessment.scope)weights.append(node('p',assessment.scope,'hint'));if(assessment.difference_cap)weights.append(node('p',`Possible image or text changes cap the score at ${assessment.difference_cap}/100. This is a hand-set review rule, not a calibrated probability.`,'hint'));
+ summary.append(weights);root.append(summary,node('p',`${data.ocr_requests} additional OCR calls. ${data.notice}`,'hint'));
+ for(const check of data.checks){
+  const card=node('article',undefined,'evidence-card');card.append(anchor(check.image_url,'Retrieved image reference'),node('p',check.comparison.status.replaceAll('_',' ')),node('p',check.comparison.reason,'hint'));if(check.comparison.diagnostics)card.append(node('p',check.comparison.diagnostics,'hint'));
+  for(const page of check.source_pages)card.append(anchor(page,'Source page'));
+  if(check.scene_comparison){const scene=check.scene_comparison;card.append(node('h3','Visual scene comparison'),node('p',scene.status.replaceAll('_',' ')),node('p',scene.reason,'hint'),node('p',scene.note,'hint'));if(scene.metrics)card.append(node('p',`Overlap: ${Math.round(scene.metrics.overlap_fraction*100)}% · Changed overlap: ${(scene.metrics.changed_overlap_fraction*100).toFixed(1)}%`,'hint'));for(const [index,region] of scene.regions.entries())card.append(node('p',`Region ${index+1}: ${region.kind.replaceAll('_',' ')}. ${region.face_detection_overlap?'Overlaps a detected face area; no identity or face-swap conclusion.':'Could involve a person, object, text or background; region type is not classified.'}`,'hint'));if(scene.preview){const image=node('img',undefined,'match-preview');image.src=scene.preview;image.alt='Uploaded image and aligned internet reference with visual difference regions numbered';card.append(image);}}
+  for(const region of check.comparison.regions||[]){
+   const detail=node('details');detail.open=region.status==='possible_text_change';detail.append(node('summary',region.status.replaceAll('_',' ')),node('p','Your uploaded image:'),node('blockquote',region.query_text),node('p','Retrieved reference:'),node('blockquote',region.reference_text),node('p',`Minimum OCR confidence: ${Math.round(region.minimum_ocr_confidence*100)}%. Text regions may be grouped differently; review the highlighted area.`,'hint'));card.append(detail);
+  }
+  if(check.comparison.preview){const image=node('img',undefined,'match-preview');image.src=check.comparison.preview;image.alt='Uploaded image with possible text-difference regions outlined in red';card.append(image);}root.append(card);
+ }
 }
 
 </script>

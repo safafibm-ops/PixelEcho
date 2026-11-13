@@ -20,13 +20,23 @@ def observations(entry):
             boxes.append({'text':str(item.get('description',''))[:200], 'vertices':[{'x':int(v.get('x',0)), 'y':int(v.get('y',0))} for v in vertices[:4]]})
     lines=[' '.join(line.split()) for line in text.splitlines() if len(words(line))>=2]
     # Preserve observed phrases; never inject a guessed location or publisher.
-    lines=sorted(dict.fromkeys(lines),key=lambda line:len(words(line)),reverse=True)
+    # Prefer large readable headlines/branding over long tiny-print OCR noise.
+    def line_priority(line):
+        tokens=set(words(line))
+        heights=[]
+        for item in boxes:
+            if set(words(item['text'])) & tokens:
+                ys=[v['y'] for v in item['vertices']]
+                heights.append(max(ys)-min(ys))
+        height=sorted(heights)[len(heights)//2] if heights else 0
+        return height, min(len(tokens),12)
+    lines=sorted(dict.fromkeys(lines),key=line_priority,reverse=True)
     queries=[]
     for line in lines[:3]:
         phrase=' '.join(line.split()[:16])[:180]
         queries.append(phrase)
     if len(lines)>1:
-        queries.insert(0, ' '.join(lines[-1].split()[:5])+' '+ ' '.join(lines[0].split()[:12]))
+        queries.insert(0, ' '.join(lines[0].split()[:8])+' '+ ' '.join(lines[1].split()[:8]))
     queries=list(dict.fromkeys(queries))[:3]
     return {'text':text,'words':boxes,'queries':queries,'status':'detected' if text else 'not_detected',
             'note':'OCR transcribes visible claims and branding; it does not verify the building, publisher or event.'}

@@ -28,3 +28,12 @@ class InvestigationTests(unittest.IsolatedAsyncioTestCase):
   result=retrieve_passages({'pages':[{'id':'one','requested_url':'https://example.com','status':'collected','text':'Mangaluru Corporation issued a street vendors notice.'}]},{'text':'Mangaluru City Corporation street vendors'})
   self.assertEqual(result['passages'][0]['evidence_id'],'one')
   self.assertEqual(result['multimodal_answer_status'],'not_configured')
+
+ def test_large_headline_precedes_long_tiny_print(self):
+  entry={'textAnnotations':[{'description':'A long tiny unreadable publisher publication line\nAuthorities seek immediate action\nTHE TIMES OF INDIA'}]}
+  for text,height in [('A long tiny unreadable publisher publication line',5),('Authorities seek immediate action',28),('THE TIMES OF INDIA',45)]:
+   for token in text.split():
+    entry['textAnnotations'].append({'description':token,'boundingPoly':{'vertices':[{'x':0,'y':0},{'x':40,'y':height}]}})
+  result=observations(entry)
+  self.assertIn('THE TIMES OF INDIA',result['queries'][0])
+  self.assertIn('Authorities seek immediate action',result['queries'][0])

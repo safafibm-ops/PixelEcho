@@ -13,3 +13,5 @@
 @media print{header,.hero,.workspace-heading,.toolbox,.method-note,.meadow-footer,.workspace>section:first-child,.report-actions,.skip-link{display:none!important}main{max-width:none;padding:0}.workspace{display:block}.panel{background:white;border:0;border-radius:0;box-shadow:none;padding:0}body{background:white;color:black}.evidence-card,.context-field{break-inside:avoid}.score-summary{background:white}details>summary::after{display:none}.score-scroll,.source-text{max-height:none;overflow:visible}.grid{grid-template-columns:repeat(3,1fr)}}
 
 .synthid-action{display:inline-block;border:1px solid #9cad83;border-radius:24px;padding:10px 14px;margin:5px 0;text-decoration:none!important;font-weight:600}.synthid-action:hover{background:#e4ecd5}
+
+#upload-integrity:not(:empty){margin-top:28px;padding-top:25px;border-top:1px solid var(--line)}#upload-integrity blockquote{white-space:pre-wrap}#upload-integrity .evidence-card>a{display:block;margin:7px 0}

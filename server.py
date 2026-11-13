@@ -19,6 +19,7 @@ import warnings
 from uuid import uuid4
 
 import httpx
+import cv2
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -27,10 +28,13 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, Field
 
 from evidence import collect_evidence
-from visual import verify_candidates
+from visual import verify_candidates, compare
 from context_report import context_report
 from assessment import assess
 from investigation import observations, crop_photo, keyword_search, rank_pages, retrieve_passages
+from evidence import SafeFetcher
+from scene_integrity import scene_differences
+from text_integrity import paragraphs, compare_text, upload_assessment
 from media_checks import analyze_image
 
 ROOT = Path(__file__).resolve().parent
@@ -294,7 +298,7 @@ def export_report(case_id: str):
     if not case or 'report' not in case:
         raise HTTPException(404, 'The report is unavailable or expired. Collect evidence after a new search.')
     return JSONResponse({'case_id': case_id, 'report': case['report'], 'verification': case['verification'],
-                         'image_analysis': case.get('image_analysis')},
+                         'image_analysis': case.get('image_analysis'), 'text_integrity': case.get('text_integrity')},
         headers={'Content-Disposition': f'attachment; filename="pixelecho-report-{case_id[:8]}.json"'})
 
 
@@ -346,9 +350,102 @@ async def search(request: Request, file: UploadFile = File(...)):
         initial_report = build_report({'pages': []}, verification, result)
         initial_report['investigation'] = result['investigation']
         cases[identifier] = {'created': time.monotonic(), 'search': result, 'verification': verification,
-                             'report': initial_report, 'image_analysis': image_analysis}
+                             'report': initial_report, 'image_analysis': image_analysis, 'query_bytes': image_bytes}
         expire_cases()
     return {**result, 'elapsed_seconds': round(time.monotonic() - start, 2),
             'query_dimensions': list(dimensions), 'provider_requests': requests,
             'verification': verification, 'case_id': identifier, 'report': initial_report, 'image_analysis': image_analysis,
             'notice': 'Prototype visual checks and reported source claims are not proof of authenticity or creator identity.'}
+
+
+class IntegrityInput(BaseModel):
+    case_id: str = Field(min_length=1, max_length=40)
+
+
+async def document_ocr(content, key):
+    payload = {'requests':[{'image':{'content':base64.b64encode(content).decode('ascii')},
+                            'features':[{'type':'DOCUMENT_TEXT_DETECTION'}]}]}
+    async with httpx.AsyncClient(timeout=25, follow_redirects=False, trust_env=False) as client:
+        response = await client.post(GOOGLE_ENDPOINT, headers={'X-Goog-Api-Key':key}, json=payload)
+        response.raise_for_status()
+        entry = response.json()['responses'][0]
+        if entry.get('error'):
+            raise ValueError('OCR unavailable')
+        return paragraphs(entry)
+
+
+@app.post('/api/text-integrity')
+async def text_integrity(request: Request, payload: IntegrityInput):
+    origin = request.headers.get('origin')
+    if origin and origin != str(request.base_url).rstrip('/'):
+        raise HTTPException(403, 'Use the local application to compare image text.')
+    expire_cases()
+    case = cases.get(payload.case_id)
+    if not case:
+        raise HTTPException(404, 'Search expired. Run a new search first.')
+    if 'text_integrity' in case:
+        return case['text_integrity']
+    if search_lock.locked():
+        raise HTTPException(429, 'An investigation is running. Please wait.')
+    key = read_key()
+    if not key:
+        raise HTTPException(503, 'A Google Vision key is required for reference OCR.')
+    async with search_lock:
+        # Server-owned candidates only: clients cannot submit arbitrary fetch targets.
+        urls = []
+        for page in case['search'].get('pages', []):
+            urls.extend(i['url'] for i in page.get('full_matches', []) + page.get('partial_matches', []))
+        for group in ('full_matches','partial_matches'):
+            urls.extend(i['url'] for i in case['search'].get(group, []))
+        primary = list(dict.fromkeys(urls))
+        similar = [i['url'] for i in case['search'].get('similar_images',[])]
+        urls = list(dict.fromkeys(primary[:2] + similar[:2] + primary[2:] + similar[2:]))[:4]
+        checks=[];ocr_requests=0;reference_ocr_count=0
+        query = case.get('query_bytes')
+        query_ocr = None
+        for url in urls:
+            stage = 'reference download'
+            item = {'image_url':url, 'source_pages':[p['url'] for p in case['search'].get('pages',[]) if any(i['url']==url for i in p.get('full_matches',[])+p.get('partial_matches',[]))]}
+            try:
+                if not query:
+                    raise ValueError('Query bytes unavailable')
+                async with asyncio.timeout(90):
+                    code,final,raw = await SafeFetcher().fetch(url,image=True)
+                    if code!=200:
+                        raise ValueError('Reference unavailable')
+                    # decode() defines the alignment coordinate system and limits.
+                    from visual import decode
+                    stage = 'reference image decoding'
+                    reference = await asyncio.to_thread(decode,raw)
+                    ok,encoded = await asyncio.to_thread(cv2.imencode,'.png',reference)
+                    if not ok:
+                        raise ValueError('Reference decode failed')
+                    ref_bytes = encoded.tobytes()
+                    stage = 'geometric alignment'
+                    geometry = await asyncio.to_thread(compare,query,ref_bytes,draw=False)
+                    item['visual_status'] = geometry['status']
+                    stage = 'scene difference analysis'
+                    item['scene_comparison'] = await asyncio.to_thread(scene_differences,query,ref_bytes,geometry.get('alignment'))
+                    if not geometry.get('alignment'):
+                        item['comparison']={'status':'inconclusive','regions':[], 'reason':'No stable distributed image alignment.'}
+                    elif reference_ocr_count >= 2:
+                        item['comparison']={'status':'not_run','regions':[], 'reason':'Text OCR budget reached; visual comparison still ran.'}
+                    else:
+                        reference_ocr_count+=1
+                        if query_ocr is None:
+                            ocr_requests+=1
+                            stage = 'uploaded image OCR'
+                            query_ocr=await document_ocr(query,key)
+                        ocr_requests+=1
+                        stage = 'reference image OCR'
+                        reference_ocr=await document_ocr(ref_bytes,key)
+                        item['comparison']=await asyncio.to_thread(compare_text,query,ref_bytes,geometry['alignment'],query_ocr,reference_ocr)
+                    item['final_url']=final
+            except Exception:
+                item['comparison']={'status':'unavailable','regions':[], 'reason':f'Could not complete {stage}. No negative authenticity conclusion follows.'}
+            checks.append(item)
+        result={'checks':checks,'upload_assessment':upload_assessment(checks), 'ocr_requests':ocr_requests,
+                'budget':'At most four reference images, two reference OCR checks and three additional Google document OCR calls; repeats reuse this case result.',
+                'notice':'Candidate references are not authenticated originals. Highlights indicate possible text or scene differences, not proof of forgery.'}
+        case['text_integrity']=result
+        return result

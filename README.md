@@ -287,3 +287,99 @@ https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/ai-content
 Automatic integration remains blocked on documented provider access and a
 supported API contract. A generic Gemini vision response is not a watermark
 measurement. Missing watermarks do not establish human origin.
+
+
+## Uploaded-image text integrity and trust assessment
+
+The default-on "Compare text" search option calls POST /api/text-integrity
+with the server-owned case id after search. It safely fetches up to two full/
+partial-match reference images (not arbitrary client URLs), aligns them using
+SIFT/RANSAC, and sends the query plus aligned-candidate inputs to Google
+DOCUMENT_TEXT_DETECTION. There are at most three additional OCR calls, cached
+per case. Uncheck the option to avoid these extra requests. A repeated check
+reuses the cached result. Raw query analysis bytes are retained only in bounded
+in-memory cases (existing eight-case limit / 15-minute on-access expiry), never
+written to disk or included in exports.
+
+OCR paragraphs need confidence >=0.85, at least 20 normalized characters in
+both compared text groups, and >=95% overlap in the compared region. Paragraphs
+are projected into the query coordinate system and pooled into a fixed 3x5
+spatial grid. This is a coarse layout heuristic: changed paragraph segmentation
+or a shifted layout can produce false differences. Case and punctuation are
+normalized. Unequal text with similarity <0.98 plus local mean pixel difference
+>0.035 is flagged as a POSSIBLE text change; other uncertain comparisons remain
+inconclusive. Text outside shared, readable regions is not assessed. No stable
+alignment, poor OCR, absent references or provider errors produce no trust score.
+
+The UI preserves both text readings, reference image/page links, OCR confidence
+and a red-box preview of the uploaded image. This detects a difference between
+versions, not which version is authentic. Even an older-looking reference is
+not assumed original. Thresholds are prototype rules, not calibrated detectors.
+
+The uploaded-image trust assessment is an explicitly uncalibrated consistency
+index: geometric alignment 40; checked text agreement 40 (20 if mixed with
+inconclusive checks); checked region coverage 4 per region, capped at 20. A
+possible change caps the total at 35 and triggers "Review required". Repeated
+copies do not add corroboration points. Only inconclusive checks yield a null
+score. Agreement says "Consistent with checked references; authenticity
+unproven", never "real" or "safe to trust". This is separate from the existing
+source evidence score, watermark signals, and publisher reliability assessment.
+
+JSON report exports now include text_integrity. Printing expands comparison
+items. Tests cover same/changed text, uncertain OCR and geometry, actual fixture
+alignment, server-owned candidates, failure handling, result caching, secret and
+image-byte exclusion from exports, and no duplicate-copy score inflation.
+56 tests pass. Latest UI JavaScript passes syntax and element-reference checks.
+No live API calls or new browser visual inspection were performed. Performance
+on the user's newspaper examples is not yet established. Remaining limits
+include changed layouts, small or missing text, different OCR segmentation,
+reference discovery beyond the two-candidate budget, and semantically equivalent
+rewrites. Internet matches do not authenticate the newspaper or its content.
+
+Comparison visibility fix: the upload text-integrity result now precedes the
+search list. Per-reference diagnostics expose the failing pipeline stage and
+OCR paragraph eligibility counts. Query planning prefers large OCR word boxes
+over long tiny-print lines. These heuristics do not repair unreadable text or
+guarantee correct matches; live newspaper comparison remains unverified.
+
+
+## Visual scene differences (14 November 2026)
+
+The image comparison now works without readable text. Four server-owned
+reference URLs are considered, reserving slots for up to two similar-image
+leads alongside full/partial matches. Similarity alone is never sufficient:
+SIFT/RANSAC must establish distributed geometric alignment. Images with only
+local resemblance or different viewpoints remain inconclusive.
+
+Scene pixels are aligned, overlap-masked and border-eroded; mild blur and
+robust global exposure correction suppress compression and lighting noise.
+Residual changes use max(22, median+6*MAD) on a 0-255 scale. Small noise
+components are removed. Broad changes (>35% overlap or median residual >25)
+are inconclusive rather than treated as isolated manipulation. Localized
+components become numbered boxes on the upload and aligned-reference preview.
+The thresholds are hand-set and not benchmark-calibrated. Sparse subtle edits,
+low-resolution faces, moving people, reflections, heavy compression, different
+perspectives, and scene-wide changes may be missed or flagged incorrectly.
+
+OpenCV's bundled frontal-face Haar cascade marks a changed region as a
+face-area difference when it overlaps a detected face. This detector can miss
+faces and does not recognize identity or establish a face swap. Other regions
+are generic scene differences; no semantic object/environment model is loaded.
+No biometric embeddings, name matching, or deepfake classifier is used.
+
+The same API and cached export preserve scene_comparison independently of OCR:
+OCR failure does not remove a completed visual result. The existing limit of
+three extra OCR calls remains (two reference OCRs plus the query). Visual checks
+use local CPU and add no detector API. The upload score can now be assessed
+without text: alignment 30, agreement 30, overlapping coverage 20, additional
+text evidence 20. Possible text/scene changes cap the score at 35; no-difference
+results are capped at 80. No score establishes authenticity. Duplicate copies
+add no points. C2PA and publisher reliability stay separate.
+
+Regression checks include local replacement, face-area overlap labeling,
+unchanged scenes, JPEG compression, global exposure, cropped overlap, missing
+alignment, no-text scoring, duplicate suppression and similar-image retrieval.
+The face-area test controls detector output; it does not benchmark real face
+detection accuracy. The user's morphed-face image has not been tested against a
+live retrieved original. Latest browser inspection remains unavailable; UI
+JavaScript syntax and element references are checked separately.

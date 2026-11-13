@@ -33,7 +33,7 @@ def compare(query_bytes, reference_bytes, *, draw=True):
             'policy': 'prototype_sift_v1_uncalibrated',
             'notice': 'Visual correspondence only. This does not prove identity, chronology, authenticity, or that every pixel is unchanged.'}
     if query.shape == reference.shape and np.array_equal(query, reference):
-        base.update(status='exact_pixels', query_coverage=1, reference_coverage=1, aligned_error=0)
+        base.update(status='exact_pixels', query_coverage=1, reference_coverage=1, aligned_error=0, alignment={'matrix':np.eye(3).tolist(), 'query_size':[query.shape[1],query.shape[0]], 'reference_size':[reference.shape[1],reference.shape[0]]})
         return base
     sift = cv2.SIFT_create(nfeatures=1800)
     qk, qd = sift.detectAndCompute(cv2.cvtColor(query, cv2.COLOR_BGR2GRAY), None)
@@ -76,6 +76,7 @@ def compare(query_bytes, reference_bytes, *, draw=True):
     if supported.sum() < 500 or min(support.mean(), inverse_support.mean()) < .12:
         base['reason'] = 'Not enough overlapping image content was retained.'
         return base
+    base['alignment'] = {'matrix':transform.tolist(), 'query_size':[qw,qh], 'reference_size':[rw,rh]}
     aligned = cv2.warpPerspective(reference, transform, (qw, qh))
     error = float(np.abs(query.astype(np.float32) - aligned.astype(np.float32))[supported].mean() / 255)
     base['aligned_error'] = round(error, 4)
